@@ -1,6 +1,7 @@
 # K.Daily.News 매일 브리핑 제작 절차
 
-이 폴더(~/Movies/K.Daily.News)의 파일로 매일 07:00, 19:00(KST) 영상을 만들어 Metricool로 게시한다.
+이 저장소(github.com/k-daily-news/k-daily-news)의 파일로 매일 07:00, 19:00(KST) 영상을 만들어 Metricool로 게시한다.
+원본 사본은 사용자 맥의 ~/Movies/K.Daily.News 에도 있다(예약 작업은 저장소만 사용).
 스타일은 항상 그대로 유지한다. 바꾸지 말 것.
 
 ## 파일
@@ -8,7 +9,10 @@
   필요: Python 3 + Pillow, ffmpeg, Noto Sans CJK(KR) 폰트(/usr/share/fonts/opentype/noto/NotoSansCJK-*.ttc)
 - assets/outro_logo.png — 최종 채널 로고. 렌더러가 자동으로 마지막 2.6초 엔딩으로 붙임(위아래 그라데이션 확장, 가운데 정렬)
 - daily_1019.json — 카테고리 브리핑 대본 예시(형식 기준)
-- out/ — 완성 영상과 게시 문구 보관 (YYYYMMDD_0700.mp4 / YYYYMMDD_1900.mp4)
+- scripts/ — 회차별 대본 JSON (YYYYMMDD_0700.json / YYYYMMDD_1900.json)
+- videos/ — 게시용 완성 영상 (YYYYMMDD_0700.mp4 / YYYYMMDD_1900.mp4)
+  공개 링크: https://raw.githubusercontent.com/k-daily-news/k-daily-news/main/videos/<파일명>
+  Metricool이 게시 예약 시 자체 저장소로 복사해 가므로, 14일 지난 영상은 삭제해 저장소 용량을 관리한다
 
 ## 영상 구성 (daily_1019.json 형식 그대로)
 1. date (2초): 업로드 날짜 — year "2026년", md "[10월 19일]", dow "월요일", tag "오늘의 뉴스 브리핑"
@@ -56,3 +60,12 @@
 - YouTube: 제목 "M월 D일 뉴스 브리핑｜연예·테크·생활·세계·날씨 #Shorts", 설명 첫 줄 해시태그 #KDailyNews #오늘의뉴스 #뉴스브리핑, 분야별 한 줄 + 분야별 해시태그, 출처 줄
 - Instagram 릴스: 분야별 한 줄 요약 + 해시태그 5개(#KDailyNews #오늘의뉴스 #뉴스브리핑 + 2개)
 - TikTok: (Metricool에 연결되면) 짧은 캡션 + 해시태그
+
+## 게시 (Metricool, blogId 7502384, 채널: Instagram k.daily.news · YouTube)
+- 영상과 대본을 저장소에 커밋·푸시한 뒤 raw 링크를 media로 사용
+- createScheduledPost: date = 그날 07:00 또는 19:00 (+09:00), draft false, autoPublish true
+  providers youtube + instagram (TikTok은 Metricool에 연결되면 추가)
+  youtubeData: type "short", privacy "public", title, tags, madeForKids false
+  instagramData: type "REEL", showReelOnFeed true
+- 점검에서 문제가 하나라도 남으면 게시하지 말고 사용자에게 사유를 알린다
+- 오전 7시분: 밤사이 뉴스 + "오늘 날씨" / 오후 7시분: 그날 뉴스 + "내일 날씨"

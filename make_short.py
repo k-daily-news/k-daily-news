@@ -475,8 +475,8 @@ def main(src, out):
         total += OUTRO_DUR
     music(f"{tmp}/m.wav", total, cuts)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{tmp}/%05d.jpg",
-                    "-i", f"{tmp}/m.wav", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
-                    "-crf", "20", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out], check=True)
+                    "-i", f"{tmp}/m.wav", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "slow",
+                    "-crf", "27", "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", out], check=True)
     subprocess.run(["rm", "-rf", tmp])
     print(out, f"{total:.1f}s")
 
