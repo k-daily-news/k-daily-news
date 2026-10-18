@@ -10,6 +10,9 @@ import json, sys, math, subprocess, os, tempfile, wave, struct, re, random
 from PIL import Image, ImageDraw, ImageFont
 
 W, H, FPS = 1080, 1920, 30
+# Safe area: nothing but background may be drawn outside it (platform UI overlays)
+SAFE_T, SAFE_B, SAFE_X = 250, 1920 - 450, 35   # content lives in y 250..1470, x 35..1045
+CONTENT_TOP = 400                              # first content line, below the label chip + progress bar
 FONT_B = "/usr/share/fonts/opentype/noto/NotoSansCJK-Black.ttc"
 FONT_R = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 KR = 1
@@ -189,48 +192,59 @@ def scene_date(d, sc, lt, c1, c2):
     return y0 + 560
 
 def scene_top5(d, sc, lt, c1, c2):
-    f = font(FONT_B, 92)
-    y, _ = draw_words(d, layout(d, sc["text"], f, W - 180), f, 90, 340, 120, lt, 0, c2, c1)
-    y += 30
-    fh, fo, fn = font(FONT_B, 50), font(FONT_R, 32), font(FONT_B, 46)
+    f = font(FONT_B, 88)
+    y, _ = draw_words(d, layout(d, sc["text"], f, W - 180), f, 90, CONTENT_TOP, 114, lt, 0, c2, c1)
+    y += 24
+    room = SAFE_B - 10 - y
+    for hs, lh, gap, srcs, badge in ((50, 66, 34, 32, 72), (46, 60, 26, 30, 66), (42, 55, 20, 28, 60), (38, 50, 16, 26, 56)):
+        fh = font(FONT_B, hs)
+        items = [layout(d, it["h"], fh, W - 330)[:2] for it in sc["items"]]
+        total = sum(lh * len(L) + srcs + 14 + gap for L in items)
+        if total <= room:
+            break
+    fo, fn = font(FONT_R, srcs), font(FONT_B, int(badge * 0.64))
     for j, it in enumerate(sc["items"]):
         st = 0.22 + j * 0.14
         k = back((lt - st) / 0.28)
         a = int(255 * max(0, min(1, (lt - st) / 0.14)))
         dx = int((1 - k) * 140)
-        lines = layout(d, it["h"], fh, W - 330)[:2]
-        hh = 66 * len(lines) + 46
+        lines = items[j]
+        hh = lh * len(lines) + srcs + 14
         if j == 0:
-            card(d, (70 + dx, y - 14, W - 70 + dx, y + hh + 6), 0.13 * a / 255)
-        # rank badge
+            card(d, (70 + dx, y - 12, W - 70 + dx, y + hh + 4), 0.13 * a / 255)
         bx, by = 100 + dx, y + 2
         if j == 0:
-            d.ellipse((bx, by, bx + 72, by + 72), fill=c2 + (a,))
-            mtext(d, "1", fn, bx + 36, by + 36, (10, 14, 30, a))
+            d.ellipse((bx, by, bx + badge, by + badge), fill=c2 + (a,))
+            mtext(d, "1", fn, bx + badge / 2, by + badge / 2, (10, 14, 30, a))
         else:
-            d.ellipse((bx, by, bx + 72, by + 72), outline=(255, 255, 255, int(a * 0.7)), width=4)
-            mtext(d, str(j + 1), fn, bx + 36, by + 36, (255, 255, 255, a))
-        draw_words(d, lines, fh, 210 + dx, y, 66, lt, st + 0.05, c2, c1, stagger=0.012)
-        d.text((210 + dx, y + 66 * len(lines) + 4), it["src"], font=fo, fill=(255, 255, 255, int(a * 0.55)))
-        y += hh + 34
+            d.ellipse((bx, by, bx + badge, by + badge), outline=(255, 255, 255, int(a * 0.7)), width=4)
+            mtext(d, str(j + 1), fn, bx + badge / 2, by + badge / 2, (255, 255, 255, a))
+        draw_words(d, lines, fh, 210 + dx, y, lh, lt, st + 0.05, c2, c1, stagger=0.012)
+        d.text((210 + dx, y + lh * len(lines) + 4), it["src"], font=fo, fill=(255, 255, 255, int(a * 0.55)))
+        y += hh + gap
     return y
 
 def scene_detail(d, sc, lt, c1, c2, img):
-    top = 330
-    f = font(FONT_B, 76)
-    lines = layout(d, sc["text"], f, W - 240)
-    # measure card height first
-    fs = font(FONT_R, 50)
-    bl = [layout(d, b, fs, W - 300) for b in sc["bullets"][:3]]
+    top = CONTENT_TOP - 10
+    # pick the largest type sizes whose card still ends inside the safe area
+    for hs, hlh, bs, blh, gap in ((76, 102, 50, 70, 26), (72, 96, 46, 64, 22), (66, 88, 42, 58, 18), (60, 80, 38, 52, 14)):
+        f, fs = font(FONT_B, hs), font(FONT_R, bs)
+        lines = layout(d, sc["text"], f, W - 240)
+        bl = [layout(d, b, fs, W - 300) for b in sc["bullets"][:3]]
+        rest = 60 + len(lines) * hlh + 30 + sum(len(b) * blh + gap for b in bl) + 110
+        if top + rest <= SAFE_B:
+            break
     media_h = 0
     media = None
     if sc.get("media") and os.path.exists(sc["media"]):
         media = Image.open(sc["media"]).convert("RGB")
         mw = W - 240
-        media_h = int(min(560, mw * media.height / media.width))
-    h = 60 + len(lines) * 102 + 30 + (media_h + 40 if media else 0) + sum(len(b) * 70 + 26 for b in bl) + 110
+        media_h = int(min(560, mw * media.height / media.width, SAFE_B - top - rest - 40))
+        if media_h < 200:
+            media, media_h = None, 0
+    h = rest + (media_h + 40 if media else 0)
     card(d, (70, top, W - 70, top + h), 0.09)
-    y, _ = draw_words(d, lines, f, 120, top + 50, 102, lt, 0, c2, c1)
+    y, _ = draw_words(d, lines, f, 120, top + 50, hlh, lt, 0, c2, c1)
     y += 30
     if media:
         k = ease((lt - 0.3) / 0.35)
@@ -243,78 +257,89 @@ def scene_detail(d, sc, lt, c1, c2, img):
         ImageDraw.Draw(mask).rounded_rectangle((0, 0, m.width - 1, m.height - 1), 24, fill=int(255 * k))
         img.paste(m, (120, int(y + (1 - k) * 30)), mask)
         y += media_h + 40
+    dot = int(bs * 0.36)
     for j, b in enumerate(bl):
         st = 0.45 + j * 0.3
         k = ease((lt - st) / 0.3)
         a = int(255 * k)
-        d.ellipse((124, y + 26, 142, y + 44), fill=c2 + (a,))
+        cy = y + blh * 0.5
+        d.ellipse((124, cy - dot / 2, 124 + dot, cy + dot / 2), fill=c2 + (a,))
         for ln in b:
             txt = "".join(("" if (g or n == 0) else " ") + w for n, (w, _, _, g) in enumerate(ln))
             d.text((170 + int((1 - k) * 40), y), txt, font=fs, fill=(255, 255, 255, a))
-            y += 70
-        y += 26
+            y += blh
+        y += gap
     k = ease((lt - 1.2) / 0.3)
     rtext(d, "출처: " + sc["src"], font(FONT_R, 34), W - 120, top + h - 70, (255, 255, 255, int(160 * k)))
     return top + h
 
 def scene_weather(d, sc, lt, c1, c2):
-    f = font(FONT_B, 88)
-    y, _ = draw_words(d, layout(d, sc["text"], f, W - 180), f, 90, 330, 116, lt, 0, c2, c1)
+    f = font(FONT_B, 76)
+    y, _ = draw_words(d, layout(d, sc["text"], f, W - 180), f, 90, CONTENT_TOP, 100, lt, 0, c2, c1)
     k = ease((lt - 0.2) / 0.3)
-    d.text((90, y + 22), sc["subtitle"], font=font(FONT_R, 44), fill=c2 + (int(255 * k),))
-    y += 110
-    cols = [(90, "도시", "l"), (330, "날씨", "c"), (530, sc["tlabel"], "c"), (690, "강수확률", "c"), (W - 90, "강수량", "r")]
-    fh = font(FONT_R, 34)
+    d.text((90, y + 8), sc["subtitle"], font=font(FONT_R, 38), fill=c2 + (int(255 * k),))
+    y += 64
+    cols = [(90, "도시", "l"), (320, "날씨", "c"), (530, sc["tlabel"], "c"), (690, "강수확률", "c"), (W - 90, "강수량", "r")]
+    fh = font(FONT_R, 30)
     for x, t, al in cols:
         (ctext if al == "c" else rtext if al == "r" else (lambda d_, t_, f_, x_, y_, c_: d_.text((x_, y_), t_, font=f_, fill=c_)))(
             d, t, fh, x, y, (255, 255, 255, int(150 * k)))
-    y += 56
+    y += 44
     d.line((90, y, W - 90, y), fill=(255, 255, 255, int(70 * k)), width=2)
-    y += 14
-    fc, fv = font(FONT_B, 50), font(FONT_B, 44)
-    rh = 78
+    y += 10
+    fc, fv, fw = font(FONT_B, 44), font(FONT_B, 40), font(FONT_R, 30)
+    rh = 62
     for j, r in enumerate(sc["rows"]):
         st = 0.3 + j * 0.05
         kk = back((lt - st) / 0.25)
         a = int(255 * max(0, min(1, (lt - st) / 0.12)))
-        dy = int((1 - kk) * 30)
+        dy = int((1 - kk) * 24)
         yy = y + j * rh + dy
         if j % 2 == 0:
-            d.rounded_rectangle((76, yy - 6, W - 76, yy + rh - 10), 18, fill=(255, 255, 255, int(a * 0.05)))
-        d.text((90, yy + 4), r["city"], font=fc, fill=(255, 255, 255, a))
-        wx_icon(d, wx_kind(r["wx"]), 262, yy + 34, 26, a)
-        d.text((300, yy + 16), r["wx"], font=font(FONT_R, 32), fill=(255, 255, 255, int(a * 0.85)))
-        ctext(d, f'{r["t"]}°', fv, 530, yy + 6, (255, 255, 255, a))
+            d.rounded_rectangle((76, yy - 4, W - 76, yy + rh - 6), 16, fill=(255, 255, 255, int(a * 0.05)))
+        mid = yy + (rh - 10) / 2
+        bb = d.textbbox((0, 0), "서울", font=fc)
+        d.text((90, mid - (bb[1] + bb[3]) / 2), r["city"], font=fc, fill=(255, 255, 255, a))
+        wx_icon(d, wx_kind(r["wx"]), 252, mid, 22, a)
+        bb = d.textbbox((0, 0), "구름많음", font=fw)
+        d.text((286, mid - (bb[1] + bb[3]) / 2), r["wx"], font=fw, fill=(255, 255, 255, int(a * 0.85)))
+        bb = d.textbbox((0, 0), "20°%약mm", font=fv)
+        ty = mid - (bb[1] + bb[3]) / 2
+        ctext(d, f'{r["t"]}°', fv, 530, ty, (255, 255, 255, a))
         wet = r["pop"] >= 60
-        ctext(d, f'{r["pop"]}%', fv, 690, yy + 6, (c2 if wet else (255, 255, 255)) + (a,))
-        rtext(d, r["rain"], fv, W - 90, yy + 6, (c2 if r["rain"] != "-" else (255, 255, 255)) + (a if r["rain"] != "-" else int(a * 0.5),))
-    y += len(sc["rows"]) * rh + 20
+        ctext(d, f'{r["pop"]}%', fv, 690, ty, (c2 if wet else (255, 255, 255)) + (a,))
+        rtext(d, r["rain"], fv, W - 90, ty, (c2 if r["rain"] != "-" else (255, 255, 255)) + (a if r["rain"] != "-" else int(a * 0.5),))
+    y += len(sc["rows"]) * rh + 8
     k = ease((lt - 1.0) / 0.3)
-    rtext(d, "출처: " + sc["src"], font(FONT_R, 32), W - 90, y, (255, 255, 255, int(160 * k)))
+    rtext(d, "출처: " + sc["src"], font(FONT_R, 28), W - 90, y, (255, 255, 255, int(160 * k)))
     if sc.get("note"):
-        rtext(d, sc["note"], font(FONT_R, 28), W - 90, y + 46, (255, 255, 255, int(120 * k)))
+        rtext(d, sc["note"], font(FONT_R, 24), W - 90, y + 38, (255, 255, 255, int(120 * k)))
     return y
 
 def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
     theme = sc.get("theme", theme); label = sc.get("label", label)
     bg, c1, c2 = THEMES[theme]
-    # punch-in zoom at scene start
+    # punch-in zoom at scene start — background only, so content never leaves the safe area
     z = 1 + 0.06 * (1 - ease(lt / 0.25))
     img = background(theme, gt, rnd)
+    if z > 1.001:
+        nw, nh = int(W * z), int(H * z)
+        img = img.resize((nw, nh), Image.BILINEAR).crop(((nw - W) // 2, (nh - H) // 2, (nw - W) // 2 + W, (nh - H) // 2 + H))
     d = ImageDraw.Draw(img, "RGBA")
 
-    fl = font(FONT_R, 44)
+    fl = font(FONT_R, 40)
     if sc.get("type") != "date":
-      d.rounded_rectangle((70, 140, 70 + d.textlength(label, font=fl) + 60, 230), 45, fill=c1 + (235,))
-      d.text((100, 152), label, font=fl, fill="white")
+      cw = d.textlength(label, font=fl) + 56
+      d.rounded_rectangle((70, 262, 70 + cw, 334), 36, fill=c1 + (235,))
+      mtext(d, label, fl, 70 + cw / 2, 298, (255, 255, 255, 255))
     seg = (W - 140) / total
     for i in range(total):
         x0 = 70 + i * seg
         fill = 230 if i < idx else 60
-        d.rounded_rectangle((x0 + 3, 270, x0 + seg - 3, 280), 5, fill=(255, 255, 255, fill))
+        d.rounded_rectangle((x0 + 3, 352, x0 + seg - 3, 361), 5, fill=(255, 255, 255, fill))
         if i == idx:
             p = min(1, lt / sc["dur"])
-            d.rounded_rectangle((x0 + 3, 270, x0 + 3 + (seg - 6) * p, 280), 5, fill=(255, 255, 255, 230))
+            d.rounded_rectangle((x0 + 3, 352, x0 + 3 + (seg - 6) * p, 361), 5, fill=(255, 255, 255, 230))
 
     typ = sc.get("type", "text")
     maxw = W - 180
@@ -377,15 +402,12 @@ def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
             d.text((90, y + int((1 - k) * 20)), txt, font=fs, fill=c2 + (int(255 * k),))
             y += 74
     if sc.get("source"):
-        d.text((90, H - 250), "출처: " + sc["source"], font=font(FONT_R, 36), fill=(255, 255, 255, 150))
+        d.text((90, SAFE_B - 56), "출처: " + sc["source"], font=font(FONT_R, 36), fill=(255, 255, 255, 150))
 
     # white flash on cut
     fa = 1 - lt / 0.08
     if fa > 0 and idx > 0:
         img = Image.blend(img, Image.new("RGB", (W, H), (255, 255, 255)), 0.35 * fa)
-    if z > 1.001:
-        nw, nh = int(W * z), int(H * z)
-        img = img.resize((nw, nh), Image.BILINEAR).crop(((nw - W) // 2, (nh - H) // 2, (nw - W) // 2 + W, (nh - H) // 2 + H))
     return img
 
 def music(path, dur, cuts):
