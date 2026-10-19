@@ -316,6 +316,65 @@ def scene_weather(d, sc, lt, c1, c2):
         rtext(d, sc["note"], font(FONT_R, 24), W - 90, y + 38, (255, 255, 255, int(120 * k)))
     return y
 
+def scene_hook(d, sc, lt, c1, c2):
+    """Opening hook: small date kicker on top, the day's strongest headline big in the middle."""
+    k = ease(lt / 0.25)
+    fk = font(FONT_R, 40)
+    d.text((90, CONTENT_TOP + 40 + int((1 - k) * 16)), sc["kicker"], font=fk, fill=c2 + (int(235 * k),))
+    f = font(FONT_B, 128)
+    lines = layout(d, sc["text"], f, W - 180)
+    lh = 160
+    y0 = int((SAFE_T + SAFE_B) / 2 - lh * len(lines) / 2 - 60)
+    y, _ = draw_words(d, lines, f, 90, y0, lh, lt, 0.05, c2, c1, stagger=0.05)
+    if sc.get("sub"):
+        k2 = ease((lt - 0.45) / 0.3)
+        d.text((90, y + 30 + int((1 - k2) * 20)), sc["sub"], font=font(FONT_B, 56), fill=(255, 255, 255, int(235 * k2)))
+    return y
+
+def scene_weather2(d, sc, lt, c1, c2):
+    """One-page weather: morning/afternoon icons, low/high temps, AM/PM rain chance, rain total."""
+    f = font(FONT_B, 76)
+    y, _ = draw_words(d, layout(d, sc["text"], f, W - 180), f, 90, CONTENT_TOP, 100, lt, 0, c2, c1)
+    k = ease((lt - 0.2) / 0.3)
+    d.text((90, y + 8), sc["subtitle"], font=font(FONT_R, 38), fill=c2 + (int(255 * k),))
+    y += 64
+    fh = font(FONT_R, 30)
+    hdr = [(90, "도시", "l"), (290, "오전 · 오후", "c"), (495, "최저 / 최고", "c"), (690, "강수확률", "c"), (W - 90, "강수량", "r")]
+    for x, t, al in hdr:
+        if al == "c": ctext(d, t, fh, x, y, (255, 255, 255, int(150 * k)))
+        elif al == "r": rtext(d, t, fh, x, y, (255, 255, 255, int(150 * k)))
+        else: d.text((x, y), t, font=fh, fill=(255, 255, 255, int(150 * k)))
+    y += 44
+    d.line((90, y, W - 90, y), fill=(255, 255, 255, int(70 * k)), width=2)
+    y += 10
+    fc, fv = font(FONT_B, 44), font(FONT_B, 36)
+    rh = 62
+    for j, r in enumerate(sc["rows"]):
+        st = 0.3 + j * 0.05
+        kk = back((lt - st) / 0.25)
+        a = int(255 * max(0, min(1, (lt - st) / 0.12)))
+        yy = y + j * rh + int((1 - kk) * 24)
+        if j % 2 == 0:
+            d.rounded_rectangle((76, yy - 4, W - 76, yy + rh - 6), 16, fill=(255, 255, 255, int(a * 0.05)))
+        mid = yy + (rh - 10) / 2
+        bb = d.textbbox((0, 0), "서울", font=fc)
+        d.text((90, mid - (bb[1] + bb[3]) / 2), r["city"], font=fc, fill=(255, 255, 255, a))
+        wx_icon(d, wx_kind(r["wx_am"]), 258, mid, 21, a)
+        mtext(d, "›", font(FONT_R, 34), 290, mid, (255, 255, 255, int(a * 0.5)))
+        wx_icon(d, wx_kind(r["wx_pm"]), 322, mid, 21, a)
+        bb = d.textbbox((0, 0), "20°%약mm", font=fv)
+        ty = mid - (bb[1] + bb[3]) / 2
+        ctext(d, f'{r["tmin"]}° / {r["tmax"]}°', fv, 495, ty, (255, 255, 255, a))
+        wet = max(r["pop_am"], r["pop_pm"]) >= 60
+        ctext(d, f'{r["pop_am"]}% / {r["pop_pm"]}%', fv, 690, ty, (c2 if wet else (255, 255, 255)) + (a,))
+        rtext(d, r["rain"], fv, W - 90, ty, (c2 if r["rain"] != "-" else (255, 255, 255)) + (a if r["rain"] != "-" else int(a * 0.5),))
+    y += len(sc["rows"]) * rh + 8
+    k = ease((lt - 1.0) / 0.3)
+    rtext(d, "출처: " + sc["src"], font(FONT_R, 28), W - 90, y, (255, 255, 255, int(160 * k)))
+    if sc.get("note"):
+        rtext(d, sc["note"], font(FONT_R, 24), W - 90, y + 38, (255, 255, 255, int(120 * k)))
+    return y
+
 def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
     theme = sc.get("theme", theme); label = sc.get("label", label)
     bg, c1, c2 = THEMES[theme]
@@ -328,7 +387,7 @@ def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
     d = ImageDraw.Draw(img, "RGBA")
 
     fl = font(FONT_R, 40)
-    if sc.get("type") != "date":
+    if sc.get("type") not in ("date", "hook"):
       cw = d.textlength(label, font=fl) + 56
       d.rounded_rectangle((70, 262, 70 + cw, 334), 36, fill=c1 + (235,))
       mtext(d, label, fl, 70 + cw / 2, 298, (255, 255, 255, 255))
@@ -361,6 +420,10 @@ def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
         f = font(FONT_B, 76)
         lines = layout(d, sc["text"], f, maxw)
         y, _ = draw_words(d, lines, f, 90, 940, 104, lt, 0.15, c2, c1)
+    elif typ == "hook":
+        y = scene_hook(d, sc, lt, c1, c2)
+    elif typ == "weather2":
+        y = scene_weather2(d, sc, lt, c1, c2)
     elif typ == "date":
         y = scene_date(d, sc, lt, c1, c2)
     elif typ == "top5":
@@ -391,7 +454,7 @@ def render_frame(sc, theme, label, lt, gt, idx, total, rnd):
         lines = layout(d, sc["text"], f, maxw)
         y0 = (H - lh * len(lines)) // 2 - 120
         y, n = draw_words(d, lines, f, 90, y0, lh, lt, 0, c2, c1)
-    if sc.get("sub"):
+    if sc.get("sub") and typ != "hook":
         fs = font(FONT_R, 52)
         y += 36
         lines = layout(d, sc["sub"], fs, maxw)
@@ -491,10 +554,11 @@ def main(src, out):
         gt += sc["dur"]
     if os.path.exists(OUTRO_LOGO):
         cuts.append(gt); base = outro_base()
-        for f in range(int(round(OUTRO_DUR * FPS))):
+        odur = spec.get("outro_dur", OUTRO_DUR)
+        for f in range(int(round(odur * FPS))):
             outro_frame(base, last, f / FPS).save(f"{tmp}/{n:05d}.jpg", quality=92)
             n += 1
-        total += OUTRO_DUR
+        total += odur
     music(f"{tmp}/m.wav", total, cuts)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(FPS), "-i", f"{tmp}/%05d.jpg",
                     "-i", f"{tmp}/m.wav", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "slow",
